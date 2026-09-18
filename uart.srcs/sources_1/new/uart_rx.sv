@@ -7,18 +7,36 @@ module uart_rx(
     output logic rx_done_tick
     );
     
+    // synchronizes asynchronous outputs from other tx
     logic [1:0] sync_rx;
+    
+    // 4-bit counter to track 16x oversampling
     logic [3:0] tick_counter;
+    
+    //  3-bit counter to track total bits received
     logic [2:0] bit_counter;
+    
+    // registers to hold data samples from middle of bit period
     logic sample_6, sample_7, sample_8;
+    
+    // a single bit of received data
     logic data_bit;
     
+    // takes the majority of the samples to filter out any interference
     assign data_bit = (sample_6 & sample_7) | (sample_6 & sample_8) | (sample_7 & sample_8);
     
+    // fsm states
     typedef enum logic [1:0] {
+        // no incoming data
         RX_IDLE = 2'b00,
+        
+        // ensures the start really is the start
         RX_START = 2'b01,
+        
+        // starts 16x sampling for 8 bits
         RX_DATA = 2'b11,
+        
+        // stops data collecting, resets registers, outputs rx done tick
         RX_STOP = 2'b10
     } uart_rx_state;
     
@@ -26,39 +44,51 @@ module uart_rx(
     
     always_ff @(posedge clk) begin
         if (rst) begin
+            // resets everything to default
             current_state <= RX_IDLE;
             rx_done_tick <= 0;
             rx_data_out <= 0;
+            
+            // connection from other tx is high when no data is being transmitted
             sync_rx <= 2'b11;
+            
             sample_6 <= 0;
             sample_7 <= 0;
             sample_8 <= 0;
             bit_counter <= 0;
             tick_counter <= 0;
         end else begin
+            // default assignment ensures rx done tick is high for a single clock cycle (10ns)
             rx_done_tick <= 0;
+            
+            // synchronizer for incoming data from other tx
             sync_rx[0] <= rx;
             sync_rx[1] <= sync_rx[0];
+            
+            if (current_state == RX_IDLE && sync_rx[1] == 0) begin
+                current_state <= RX_START;
+                tick_counter <= 0;
+            end
+            
+            // fsm state logic and sampling only evaluated based on baud rate
             if (tick_16x) begin
                 case (current_state)
-                    RX_IDLE: begin
-                        tick_counter <= 0;
-                        if (sync_rx[1] == 0) begin
-                            current_state <= RX_START;
-                        end
-                    end
                     RX_START: begin
                         tick_counter <= tick_counter + 1;
                         if (tick_counter == 7) begin
                             if (sync_rx[1] != 0) begin
+                                // rechecks halfway through the baud rate tick to determine legitimacy
                                 current_state <= RX_IDLE;
                             end
                         end else if (tick_counter == 15) begin
+                            // if rx is still low, this is real and data transmission is arriving soon
                             current_state <= RX_DATA;
                         end
                     end
                     RX_DATA: begin
                         tick_counter <= tick_counter + 1;
+                        
+                        // samples three times at the center of a baud rate cycle
                         if (tick_counter == 6) begin
                             sample_6 <= sync_rx[1];
                         end else if (tick_counter == 7) begin
@@ -66,9 +96,11 @@ module uart_rx(
                         end else if (tick_counter == 8) begin
                             sample_8 <= sync_rx[1];
                         end else if (tick_counter == 15) begin
+                            // first bit of data will be the lsb, this sets current data bit as msb and shifts everything down
                             rx_data_out <= {data_bit, rx_data_out[7:1]};
                             bit_counter <= bit_counter + 1;
                             if (bit_counter == 7) begin
+                                // once eight bits have been processed, data collection ends
                                 current_state <= RX_STOP;
                                 bit_counter <= 0;
                             end
@@ -81,6 +113,7 @@ module uart_rx(
                             current_state <= RX_IDLE;
                         end
                     end
+                    default: ; // RX_IDLE tracked outside of baud rate
                 endcase
             end
         end

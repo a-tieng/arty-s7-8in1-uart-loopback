@@ -4,16 +4,16 @@ module rst_synchronizer(
     output logic sync_rst
     );
     
-    logic [1:0] ff;
+    // initializes 2-stage synchronizer to 0
+    logic [1:0] ff = 2'b00;
     
+    // synchronized reset will be connected to this second flip flop
     assign sync_rst = ff[1];
     
-    initial begin
-        ff = 2'b00;
-    end
-    
     always_ff @(posedge clk) begin
+        // captures asynchronous human input
         ff[0] <= async_rst;
+        // captures stabilized output
         ff[1] <= ff[0];
     end
 endmodule

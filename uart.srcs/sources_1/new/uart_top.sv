@@ -18,7 +18,7 @@ module uart_top(
             tx_start_hold <= 0;
         end else if (rx_done_tick) begin
             tx_start_hold <= 1;
-        end else if (tx_busy) begin
+        end else if (~tx_busy) begin
             tx_start_hold <= 0;
         end
     end
