@@ -1,0 +1,10 @@
+# Ignore Vivado temporary and build files
+*.jou
+*.log
+*.str
+*.dcp
+*.hw/
+*.ip_user_files/
+*.cache/
+*.sim/
+*.runs/
